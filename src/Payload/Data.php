@@ -6,7 +6,7 @@ namespace Sniper\EfrisLib\Payload;
 use JsonSerializable;
 use PHPUnit\Framework\Constraint\IsInstanceOf;
 use Sniper\EfrisLib\Builder;
-use Sniper\EfrisLib\Crypto;
+use Sniper\EfrisLib\Crypto2;
 use function PHPUnit\Framework\isInstanceOf;
 
 class Data implements JsonSerializable
@@ -17,7 +17,7 @@ class Data implements JsonSerializable
 
     public function sign(): Data
     {
-        $signed = Crypto::rsaSign($this->content);
+        $signed = Crypto2::rsaSign($this->content);
         if ($signed)
             $this->signature=base64_encode($signed);
         return $this;
@@ -29,7 +29,7 @@ class Data implements JsonSerializable
      */
     public function encrypt(string $aesKey): Data
     {
-        $this->content = Crypto::aesEncrypt($this->content, $aesKey);
+        $this->content = Crypto2::aesEncrypt($this->content, $aesKey);
         $this->dataDescription->codeType = "1";
         $this->dataDescription->encryptCode = "2";
         return $this;
@@ -37,7 +37,7 @@ class Data implements JsonSerializable
 
     public function decrypt(string $aesKey): Data
     {
-        $this->content = Crypto::aesDecrypt($this->content, $aesKey);
+        $this->content = Crypto2::aesDecrypt($this->content, $aesKey);
         return $this;
     }
 

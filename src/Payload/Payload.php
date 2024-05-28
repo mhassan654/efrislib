@@ -4,7 +4,7 @@ namespace Sniper\EfrisLib\Payload;
 
 use JsonSerializable;
 use Sniper\EfrisLib\Builder;
-use Sniper\EfrisLib\Crypto;
+use Sniper\EfrisLib\Crypto2;
 
 /**
  * @template T of Payload
@@ -21,13 +21,13 @@ class Payload implements JsonSerializable
      */
     public function encrypt(string $aesKey): Payload
     {
-        $this->data->content = Crypto::aesEncrypt($this->data->content, $aesKey);
+        $this->data->content = Crypto2::aesEncrypt($this->data->content, $aesKey);
         return $this;
     }
 
     public function decrypt(string $aesKey): Payload
     {
-        $this->data->content = Crypto::aesDecrypt($this->data->content, $aesKey);
+        $this->data->content = Crypto2::aesDecrypt($this->data->content, $aesKey);
         return $this;
     }
 

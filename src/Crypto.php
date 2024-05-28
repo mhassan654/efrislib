@@ -1,45 +1,96 @@
 <?php
+/**
+ * Created by Muwonge Hassan Saava.
+ * User: Muwonge Hassan Saava
+ * Date: 28/05/2024$
+ * Time: 16:57$
+ * FileName: Crypto.php
+ * PROJECT NAME: efrislib
+ * Github: https://github.com/mhassan654
+ */
+
+
 namespace Sniper\EfrisLib;
+
+use Illuminate\Http\Response;
+
 class Crypto
 {
-    private const cipherAlgorithm = "aes-128-ecb";
+    private const CIPHER_ALGORITHM = 'aes-128-ecb';
     public static string $privateKeyPath;
     public static string $privateKeyPassword;
 
-
-    private static function getPrivateKey(): mixed
+    public static function setPrivateKeyPath(string $path): void
     {
-        $cert_store = file_get_contents(Crypto::$privateKeyPath);
-        $isRead = openssl_pkcs12_read($cert_store, $cert_info, Crypto::$privateKeyPassword);
-        return $cert_info['pkey'];
+        self::$privateKeyPath = $path;
     }
-    public static function rsaDecrypt($encryptedData): string
+
+    public static function setPrivateKeyPassword(string $password): void
+    {
+        self::$privateKeyPassword = $password;
+    }
+
+    private static function getPrivateKey(): Response
+    {
+        $certStore = file_get_contents(self::$privateKeyPath);
+        if (!$certStore) {
+            throw new RuntimeException('Failed to read private key file.');
+        }
+
+        $certInfo = [];
+        $isRead = openssl_pkcs12_read($certStore, $certInfo, self::$privateKeyPassword);
+        if (!$isRead) {
+            throw new RuntimeException('Failed to parse private key from certificate store.');
+        }
+
+        return $certInfo['pkey'];
+    }
+
+    public static function rsaDecrypt(string $encryptedData): string
     {
         $privateKey = self::getPrivateKey();
-        openssl_private_decrypt($encryptedData, $decryptedData, $privateKey, OPENSSL_PKCS1_PADDING);
+        $result = openssl_private_decrypt($encryptedData, $decryptedData, $privateKey, OPENSSL_PKCS1_PADDING);
+
+        if ($result !== true) {
+            throw new RuntimeException('Failed to decrypt data with private key.');
+        }
+
         return $decryptedData;
     }
 
-    public static function aesEncrypt(string $data, string $aesKey): bool|string
+    public static function aesEncrypt(string $data, string $aesKey): string
     {
-//        $data = json_encode($data);
-        if ($data)
-            return openssl_encrypt($data, Crypto::cipherAlgorithm, $aesKey);
-        return $data;
+        if (empty($data)) {
+            return $data;
+        }
+
+        $encryptedData = openssl_encrypt($data, self::CIPHER_ALGORITHM, $aesKey);
+        if (!$encryptedData) {
+            throw new RuntimeException('Failed to encrypt data with AES.');
+        }
+
+        return $encryptedData;
     }
 
-    public static function aesDecrypt(string $encryptedData, string $aesKey): bool|string
+    public static function aesDecrypt(string $encryptedData, string $aesKey): string
     {
-        return openssl_decrypt($encryptedData, Crypto::cipherAlgorithm, $aesKey);
+        $decryptedData = openssl_decrypt($encryptedData, self::CIPHER_ALGORITHM, $aesKey);
+        if (!$decryptedData) {
+            throw new RuntimeException('Failed to decrypt data with AES.');
+        }
+
+        return $decryptedData;
     }
 
-    public static function rsaSign(string $data): bool|string
+    public static function rsaSign(string $data): string
     {
-        $pKey = Crypto::getPrivateKey();
-        $isSigned = openssl_sign($data, $signature, $pKey, OPENSSL_ALGO_SHA1);
-        if ($isSigned)
-            return $signature;
-        return false;
-    }
+        $privateKey = self::getPrivateKey();
+        $result = openssl_sign($data, $signature, $privateKey, OPENSSL_ALGO_SHA1);
 
+        if (!$result) {
+            throw new RuntimeException('Failed to sign data with private key.');
+        }
+
+        return $signature;
+    }
 }

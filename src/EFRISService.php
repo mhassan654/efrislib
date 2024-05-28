@@ -3,47 +3,50 @@
 namespace Sniper\EfrisLib;
 
 use JsonException;
-use PhpParser\Node\Scalar\String_;
 use Sniper\EfrisLib\Invoicing\CreditNote\CancelNote;
 use Sniper\EfrisLib\Invoicing\CreditNote\CreditNote;
 use Sniper\EfrisLib\Invoicing\CreditNote\CreditNoteQuery;
 use Sniper\EfrisLib\Invoicing\Invoice;
 use Sniper\EfrisLib\Invoicing\InvoiceQuery;
 use Sniper\EfrisLib\Misc\Enums\TaxpayerType;
-use Sniper\EfrisLib\Misc\Normalizers\TaxpayerTypeNormalizer;
-use Sniper\EfrisLib\Misc\SerializerFactory;
 use Sniper\EfrisLib\Misc\TaxpayerInfo;
 use Sniper\EfrisLib\Payload\Data;
 use Sniper\EfrisLib\Payload\GlobalInfo;
 use Sniper\EfrisLib\Payload\Payload;
 use Sniper\EfrisLib\Product\GoodsStockMaintain;
-use Sniper\EfrisLib\Product\Product;
 use Sniper\EfrisLib\Product\ProductQuery;
 use Sniper\EfrisLib\Product\ProductUpload;
 use Sniper\EfrisLib\Response\Invoice\CreditNote\CreditNoteResponse;
 use Sniper\EfrisLib\Response\Invoice\InvoiceResponse;
 use Sniper\EfrisLib\Response\ProductQueryResponse;
 use Sniper\EfrisLib\Response\Response;
-use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
-use function PHPUnit\Framework\isEmpty;
 
 class EFRISService
 {
     public string $tin;
     public string $deviceNo;
+    public string $key_path;
     public ?string $timeZone;
-    public function __construct(protected Serializer $serializer)
+    private Serializer $serializer;
+    public function __construct(Serializer $serializer,$tin,$deviceNo,$key_path)
     {
+        $this->serializer = $serializer;
+        $this->tin=$tin;
+        $this->deviceNo=$deviceNo;
+        $this->key_path = $key_path;
+
     }
 
     /**
      * @param mixed $content
      * @param string $interfaceCode
+     * @param $type
+     * @param bool $encrypt
      * @return Response|bool
      */
     public function send(mixed $content, string $interfaceCode, $type, bool $encrypt = true): Response|bool
@@ -80,15 +83,28 @@ class EFRISService
      */
     private function json_deserialize(string $json, string $type): mixed
     {
-        if ($type == "array")
-            return $this->serializer->deserialize($json, $type,'json');
-        return $this->serializer->deserialize($json, $type, 'json',
+        if ($type == "array") {
+            return $this->serializer->deserialize($json, $type, 'json');
+        }
+
+        $encoders =[new JsonEncoder()];
+        $normalizers = [new ObjectNormalizer(), new ArrayDenormalizer()];
+        $serializer = new Serializer($normalizers,$encoders);
+
+        return $serializer->deserialize($json, $type, 'json',
             [AbstractObjectNormalizer::SKIP_NULL_VALUES, AbstractObjectNormalizer::SKIP_UNINITIALIZED_VALUES]);
     }
 
+    /**
+     * @param mixed $data
+     * @return string
+     */
     private function json_serialize(mixed $data): string
     {
-        return $this->serializer->serialize($data, 'json');
+        $encoders =[new JsonEncoder()];
+        $normalizers = [new ObjectNormalizer(), new ArrayDenormalizer()];
+        $serializer = new Serializer($normalizers,$encoders);
+        return $serializer->serialize($data, 'json');
     }
 
     /**
@@ -168,11 +184,17 @@ class EFRISService
      */
     private function extractResponse(Payload $payload, $type, $aesKey): Response
     {
+        // Set private key path and password (replace with your actual values)
+
+        Crypto2::setPrivateKeyPath($this->key_path);
+        Crypto2::setPrivateKeyPassword('efris12345');
+
         $response = Response::builder()->returnStateInfo($payload->returnStateInfo);
         var_dump($payload);
 //        check encryption stata
         $isEncrypted = $payload->data->dataDescription->codeType == "1";
         $encryptCode = $payload->data->dataDescription->encryptCode;
+
         if ($isEncrypted and $encryptCode == "2") {
             if ($aesKey == null)
                 $aesKey = self::getAESKey();
@@ -181,16 +203,19 @@ class EFRISService
             $jsonContent = base64_decode($payload->data->content);
             if ($payload->globalInfo->interfaceCode == "T104") {
                 $passowrdDes = base64_decode(json_decode($jsonContent)->passowrdDes);
-                $response->data(base64_decode(Crypto::rsaDecrypt($passowrdDes)));
+                $response->data(base64_decode(Crypto2::rsaDecrypt($passowrdDes)));
             } else {
                 $response->data(self::json_deserialize($jsonContent, 'array'));
             }
             return $response;
         }
-        if (gettype($payload->data->content) == "string" and empty($payload->data->content))
+
+        if (gettype($payload->data->content) == "string" && empty($payload->data->content)) {
             $response->data($payload->data->content);
-        else
+        }
+        else {
             $response->data(EFRISService::json_deserialize($payload->data->content, $type));
+        }
 
         return $response;
     }
@@ -218,6 +243,8 @@ class EFRISService
         curl_close($curl);
         if ($response) {
             $payload = self::json_deserialize($response, Payload::class);
+
+//            dd($payload);
             // self::json_deserialize($response, Payload::class);
             return self::extractResponse($payload, $type, $aesKey);
         }
